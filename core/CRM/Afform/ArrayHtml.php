@@ -22,17 +22,36 @@ class CRM_Afform_ArrayHtml {
       '*' => 'text',
     ],
     'af-entity' => [
+      '#selfClose' => TRUE,
       'name' => 'text',
       'type' => 'text',
       'data' => 'js',
     ],
     'af-field' => [
+      '#selfClose' => TRUE,
       'name' => 'text',
       'defn' => 'js',
     ],
     'af-fieldset' => [
       'model' => 'text',
     ],
+    'area' => ['#selfClose' => TRUE],
+    'base' => ['#selfClose' => TRUE],
+    'br' => ['#selfClose' => TRUE],
+    'col' => ['#selfClose' => TRUE],
+    'command' => ['#selfClose' => TRUE],
+    'embed' => ['#selfClose' => TRUE],
+    'hr' => ['#selfClose' => TRUE],
+    'iframe' => ['#selfClose' => TRUE],
+    'img' => ['#selfClose' => TRUE],
+    'input' => ['#selfClose' => TRUE],
+    'keygen' => ['#selfClose' => TRUE],
+    'link' => ['#selfClose' => TRUE],
+    'meta' => ['#selfClose' => TRUE],
+    'param' => ['#selfClose' => TRUE],
+    'source' => ['#selfClose' => TRUE],
+    'track' => ['#selfClose' => TRUE],
+    'wbr' => ['#selfClose' => TRUE],
   ];
 
   /**
@@ -57,6 +76,14 @@ class CRM_Afform_ArrayHtml {
   public function convertArrayToHtml(array $array) {
     if ($array === []) {
       return '';
+    }
+
+    if (isset($array['#comment'])) {
+      if (strpos($array['#comment'], '-->')) {
+        Civi::log()->warning('Afform: Cannot store comment with text "-->". Munging.');
+        $array['#comment'] = str_replace('-->', '-- >', $array['#comment']);
+      }
+      return sprintf('<!--%s-->', $array['#comment']);
     }
 
     $tag = empty($array['#tag']) ? self::DEFAULT_TAG : $array['#tag'];
@@ -85,9 +112,15 @@ class CRM_Afform_ArrayHtml {
         ]);
       }
     }
-    $buf .= '>';
-    $buf .= $this->convertArraysToHtml($children);
-    $buf .= '</' . $tag . '>';
+
+    if (empty($children) && $this->isSelfClosing($tag)) {
+      $buf .= ' />';
+    }
+    else {
+      $buf .= '>';
+      $buf .= $this->convertArraysToHtml($children);
+      $buf .= '</' . $tag . '>';
+    }
     return $buf;
   }
 
@@ -153,7 +186,8 @@ class CRM_Afform_ArrayHtml {
       return $node->textContent;
     }
     elseif ($node instanceof DOMComment) {
-      // FIXME: How to preserve comments? For the moment, discarding them.
+      $arr = ['#comment' => $node->nodeValue];
+      return $arr;
     }
     else {
       throw new \RuntimeException("Unrecognized DOM node");
@@ -171,6 +205,17 @@ class CRM_Afform_ArrayHtml {
       $children[] = $this->convertNodeToArray($childNode);
     }
     return $children;
+  }
+
+  /**
+   * @param string $tag
+   *   Ex: 'img', 'div'
+   * @return bool
+   *   TRUE if the tag should look like '<img/>'.
+   *   FALSE if the tag should look like '<div></div>'.
+   */
+  protected function isSelfClosing($tag) {
+    return $this->protoSchema[$tag]['#selfClose'] ?? FALSE;
   }
 
   /**

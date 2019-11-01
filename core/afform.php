@@ -310,7 +310,7 @@ function afform_civicrm_alterAngular($angular) {
       foreach (pq('af-field', $doc) as $afField) {
         /** @var DOMElement $afField */
         $fieldName = $afField->getAttribute('name');
-        $entityName = pq($afField)->parent('[af-fieldset]')->attr('af-fieldset');
+        $entityName = pq($afField)->parents('[af-fieldset]')->attr('af-fieldset');
         if (!preg_match(';^[a-zA-Z0-9\_\-\. ]+$;', $entityName)) {
           throw new \CRM_Core_Exception("Cannot process $path: malformed entity name ($entityName)");
         }
@@ -392,27 +392,35 @@ function afform_civicrm_buildAsset($asset, $params, &$mimeType, &$content) {
   }
 
   $name = $params['name'];
-  // Hmm?? $scanner = new CRM_Afform_AfformScanner();
-  // Hmm?? afform_scanner
+  /** @var \CRM_Afform_AfformScanner $scanner */
   $scanner = Civi::service('afform_scanner');
   $meta = $scanner->getMeta($name);
-  // Hmm?? $scanner = new CRM_Afform_AfformScanner();
-
-  $fileName = '~afform/' . _afform_angular_module_name($name, 'camel');
-  $htmls = [
-    $fileName => file_get_contents($scanner->findFilePath($name, 'aff.html')),
-  ];
-  $htmls = \Civi\Angular\ChangeSet::applyResourceFilters(Civi::service('angular')->getChangeSets(), 'partials', $htmls);
 
   $smarty = CRM_Core_Smarty::singleton();
   $smarty->assign('afform', [
     'camel' => _afform_angular_module_name($name, 'camel'),
     'meta' => $meta,
     'metaJson' => json_encode($meta),
-    'layout' => $htmls[$fileName],
+    'layout' => _afform_html_filter($name, $scanner->getLayout($name)),
   ]);
   $mimeType = 'text/javascript';
   $content = $smarty->fetch('afform/AfformAngularModule.tpl');
+}
+
+/**
+ * Apply any filters to an HTML partial.
+ *
+ * @param string $formName
+ * @param string $html
+ *   Original HTML.
+ * @return string
+ *   Modified HTML.
+ */
+function _afform_html_filter($formName, $html) {
+  $fileName = '~afform/' . _afform_angular_module_name($formName, 'camel');
+  $htmls = [$fileName => $html];
+  $htmls = \Civi\Angular\ChangeSet::applyResourceFilters(Civi::service('angular')->getChangeSets(), 'partials', $htmls);
+  return $htmls[$fileName];
 }
 
 /**

@@ -10,6 +10,8 @@ class CRM_Afform_ArrayHtml {
 
   const DEFAULT_TAG = 'div';
 
+  private $indent = -1;
+
   /**
    * This is a minimalist/temporary placeholder for a schema definition.
    * FIXME: It shouldn't be here or look like this.
@@ -56,13 +58,19 @@ class CRM_Afform_ArrayHtml {
    * @var bool
    */
   protected $deepCoding;
+  /**
+   * @var bool
+   */
+  protected $formatWhitespace;
 
   /**
    * CRM_Afform_ArrayHtml constructor.
    * @param bool $deepCoding
+   * @param bool $formatWhitespace
    */
-  public function __construct($deepCoding = TRUE) {
+  public function __construct($deepCoding = TRUE, $formatWhitespace = FALSE) {
     $this->deepCoding = $deepCoding;
+    $this->formatWhitespace = $formatWhitespace;
   }
 
   /**
@@ -75,13 +83,15 @@ class CRM_Afform_ArrayHtml {
     if ($array === []) {
       return '';
     }
+    $indent = $this->formatWhitespace ? str_repeat('  ', $this->indent) : '';
+    $end = $this->formatWhitespace ? "\n" : '';
 
     if (isset($array['#comment'])) {
       if (strpos($array['#comment'], '-->')) {
         Civi::log()->warning('Afform: Cannot store comment with text "-->". Munging.');
         $array['#comment'] = str_replace('-->', '-- >', $array['#comment']);
       }
-      return sprintf('<!--%s-->', $array['#comment']);
+      return $indent . sprintf('<!--%s-->', $array['#comment']) . $end;
     }
 
     if (isset($array['#text'])) {
@@ -93,7 +103,7 @@ class CRM_Afform_ArrayHtml {
     $children = empty($array['#children']) ? [] : $array['#children'];
     unset($array['#children']);
 
-    $buf = '<' . $tag;
+    $buf = $indent . '<' . $tag;
     foreach ($array as $attrName => $attrValue) {
       if ($attrName{0} === '#') {
         continue;
@@ -115,23 +125,40 @@ class CRM_Afform_ArrayHtml {
       }
     }
 
-    if (isset($array['#markup'])) {
-      return $buf . '>' . $array['#markup'] . '</' . $tag . '>';
+    if (isset($array['#markup']) && (!$this->formatWhitespace || strpos($array['#markup'], '<') === FALSE)) {
+      $buf .= '>' . $array['#markup'] . '</' . $tag . '>';
     }
-
-    if (empty($children) && $this->isSelfClosing($tag)) {
+    elseif (isset($array['#markup'])) {
+      $indent2 = str_repeat('  ', $this->indent + 1);
+      $buf .= '>' . $end . $indent2 . str_replace("\n<", "\n$indent2<", $array['#markup']) . $end . $indent . '</' . $tag . '>';
+    }
+    elseif (empty($children) && $this->isSelfClosing($tag)) {
       $buf .= ' />';
     }
     else {
-      $buf .= '>';
-      $buf .= $this->convertArraysToHtml($children);
+      $contents = $this->convertArraysToHtml($children);
+      // No indentation if contents are only text
+      if (!$this->formatWhitespace || strpos($contents, '<') === FALSE) {
+        $buf .= '>' . $contents;
+      }
+      else {
+        $buf .= '>' . $end;
+        $buf .= $contents . $indent;
+      }
       $buf .= '</' . $tag . '>';
     }
-    return $buf;
+    return $buf . $end;
   }
 
+  /**
+   * Converts a subset of items into html markup
+   *
+   * @param array $children
+   * @return string html
+   */
   public function convertArraysToHtml($children) {
     $buf = '';
+    $this->indent++;
 
     foreach ($children as $child) {
       if (is_string($child)) {
@@ -142,7 +169,19 @@ class CRM_Afform_ArrayHtml {
       }
     }
 
+    $this->indent--;
     return $buf;
+  }
+
+  /**
+   * Converts a full array of items into html markup
+   *
+   * @param array $tree
+   * @return string html
+   */
+  public function convertTreeToHtml($tree) {
+    $this->indent = -1;
+    return $this->replaceUnicodeChars($this->convertArraysToHtml($tree));
   }
 
   /**
@@ -157,7 +196,8 @@ class CRM_Afform_ArrayHtml {
     }
 
     $doc = new DOMDocument();
-    @$doc->loadHTML("<html><body>$html</body></html>");
+    $doc->preserveWhiteSpace = !$this->formatWhitespace;
+    @$doc->loadHTML("<?xml encoding=\"utf-8\" ?><html><body>$html</body></html>");
 
     // FIXME: Validate expected number of child nodes
 
@@ -183,11 +223,11 @@ class CRM_Afform_ArrayHtml {
         $arr[$attribute->name] = $this->decodeAttrValue($type, $txt);
       }
       if ($node->childNodes->length > 0) {
-        // In shallow mode, return "af-markup" blocks as-is
-        if (!$this->deepCoding && !empty($arr['class']) && strpos($arr['class'], 'af-markup') !== FALSE) {
+        // In shallow mode, return markup as-is if node isn't supported by the gui editor
+        if (!$this->deepCoding && !$this->isNodeEditable($arr)) {
           $arr['#markup'] = '';
           foreach ($node->childNodes as $child) {
-            $arr['#markup'] .= $child->ownerDocument->saveXML($child);
+            $arr['#markup'] .= $this->replaceUnicodeChars($child->ownerDocument->saveXML($child));
           }
         }
         else {
@@ -197,7 +237,7 @@ class CRM_Afform_ArrayHtml {
       return $arr;
     }
     elseif ($node instanceof DOMText) {
-      return ['#text' => $node->textContent];
+      return ['#text' => $this->replaceUnicodeChars($node->textContent)];
     }
     elseif ($node instanceof DOMComment) {
       return ['#comment' => $node->nodeValue];
@@ -215,7 +255,14 @@ class CRM_Afform_ArrayHtml {
   protected function convertNodesToArray($nodes) {
     $children = [];
     foreach ($nodes as $childNode) {
-      $children[] = $this->convertNodeToArray($childNode);
+      $childArray = $this->convertNodeToArray($childNode);
+      // Remove extra whitespace
+      if ($this->formatWhitespace && isset($childArray['#text'])) {
+        $childArray['#text'] = trim($childArray['#text']);
+      }
+      if (!isset($childArray['#text']) || strlen($childArray['#text'])) {
+        $children[] = $childArray;
+      }
     }
     return $children;
   }
@@ -304,6 +351,40 @@ class CRM_Afform_ArrayHtml {
       $attrValue = $txtAttrValue;
       return $attrValue;
     }
+  }
+
+  /**
+   * Convert non-breaking space character to html notation.
+   *
+   * Makes html files easier to read.
+   *
+   * Note: This function does NOT convert all html entities (< to &lt;, etc.)
+   * as the input string is assumed to already be valid markup.
+   *
+   * @param string $markup - some html
+   * @return string
+   */
+  public function replaceUnicodeChars($markup) {
+    // TODO: Potentially replace other unicode characters that can be represented as html entities
+    $replace = [
+      ["\xc2\xa0", '&nbsp;'],
+    ];
+    return str_replace(array_column($replace, 0), array_column($replace, 1), $markup);
+  }
+
+  /**
+   * Determine if a node is recognized by the gui editor.
+   *
+   * @param array $item
+   * @return bool
+   */
+  public function isNodeEditable(array $item) {
+    if ($item['#tag'] === 'af-field' || $item['#tag'] === 'af-form' || isset($item['af-fieldset'])) {
+      return TRUE;
+    }
+    $editableClasses = ['af-block', 'af-text', 'af-button'];
+    $classes = explode(' ', $item['class'] ?? '');
+    return (bool) array_intersect($editableClasses, $classes);
   }
 
 }

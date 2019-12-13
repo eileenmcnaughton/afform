@@ -170,16 +170,31 @@ function afform_civicrm_angularModules(&$angularModules) {
       'js' => ['assetBuilder://afform.js?name=' . urlencode($name)],
       'requires' => $meta['requires'],
       'basePages' => [],
+      'partialsCallback' => '_afform_get_partials',
+      '_afform' => $name,
       'exports' => [
         _afform_angular_module_name($name, 'dash') => 'AE',
       ],
     ];
-
-    // FIXME: The HTML layout template is embedded in the JS asset.
-    // This works at runtime for basic usage, but it bypasses
-    // the normal workflow for templates (e.g. translation).
-    // We should update core so that 'partials' can be specified more dynamically.
   }
+}
+
+/**
+ * Construct a list of partials for a given afform/angular module.
+ *
+ * @param string $moduleName
+ *   The module name.
+ * @param array $module
+ *   The module definition.
+ * @return array
+ *   Array(string $filename => string $html).
+ */
+function _afform_get_partials($moduleName, $module) {
+  /** @var CRM_Afform_AfformScanner $scanner */
+  $scanner = Civi::service('afform_scanner');
+  return [
+    "~/$moduleName/$moduleName.aff.html" => $scanner->getLayout($module['_afform']),
+  ];
 }
 
 /**
@@ -301,7 +316,7 @@ function _afform_reverse_deps_find($formName, $html, $revMap) {
  */
 function afform_civicrm_alterAngular($angular) {
   $fieldMetadata = \Civi\Angular\ChangeSet::create('fieldMetadata')
-    ->alterHtml(';^~afform/;', function($doc, $path) {
+    ->alterHtml(';\\.aff\\.html$;', function($doc, $path) {
       $entities = _afform_getMetadata($doc);
 
       foreach (pq('af-field', $doc) as $afField) {
@@ -407,32 +422,17 @@ function afform_civicrm_buildAsset($asset, $params, &$mimeType, &$content) {
   /** @var \CRM_Afform_AfformScanner $scanner */
   $scanner = Civi::service('afform_scanner');
   $meta = $scanner->getMeta($name);
+  $moduleName = _afform_angular_module_name($name, 'camel');
 
   $smarty = CRM_Core_Smarty::singleton();
   $smarty->assign('afform', [
-    'camel' => _afform_angular_module_name($name, 'camel'),
+    'camel' => $moduleName,
     'meta' => $meta,
     'metaJson' => json_encode($meta),
-    'layout' => _afform_html_filter($name, $scanner->getLayout($name)),
+    'templateUrl' => "~/$moduleName/$moduleName.aff.html",
   ]);
   $mimeType = 'text/javascript';
   $content = $smarty->fetch('afform/AfformAngularModule.tpl');
-}
-
-/**
- * Apply any filters to an HTML partial.
- *
- * @param string $formName
- * @param string $html
- *   Original HTML.
- * @return string
- *   Modified HTML.
- */
-function _afform_html_filter($formName, $html) {
-  $fileName = '~afform/' . _afform_angular_module_name($formName, 'camel');
-  $htmls = [$fileName => $html];
-  $htmls = \Civi\Angular\ChangeSet::applyResourceFilters(Civi::service('angular')->getChangeSets(), 'partials', $htmls);
-  return $htmls[$fileName];
 }
 
 /**

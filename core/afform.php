@@ -452,10 +452,38 @@ function afform_civicrm_alterMenu(&$items) {
         'page_callback' => 'CRM_Afform_Page_AfformBase',
         'page_arguments' => 'afform=' . urlencode($name),
         'title' => $meta['title'] ?? '',
-        'access_arguments' => [['access CiviCRM'], 'and'], // FIXME
+        'access_arguments' => [["@afform:$name"], 'and'],
         'is_public' => $meta['is_public'],
       ];
     }
+  }
+}
+
+/**
+ * Implements hook_civicrm_permission_check().
+ *
+ * This extends the list of permissions available in `CRM_Core_Permission:check()`
+ * by introducing virtual-permissions named `@afform:myForm`. The evaluation
+ * of these virtual-permissions is dependent on the settings for `myForm`.
+ * `myForm` may be exposed/integrated through multiple subsystems (routing,
+ * nav-menu, API, etc), and the use of virtual-permissions makes easy to enforce
+ * consistent permissions across any relevant subsystems.
+ *
+ * @see CRM_Utils_Hook::permission_check()
+ */
+function afform_civicrm_permission_check($permission, &$granted, $contactId) {
+  if ($permission{0} !== '@') {
+    // Micro-optimization - this function may get hit a lot.
+    return;
+  }
+
+  if (preg_match('/^@afform:(.*)/', $permission, $m)) {
+    $name = $m[1];
+
+    /** @var CRM_Afform_AfformScanner $scanner */
+    $scanner = \Civi::container()->get('afform_scanner');
+    $meta = $scanner->getMeta($name);
+    $granted = CRM_Core_Permission::check($meta['permission'], $contactId);
   }
 }
 

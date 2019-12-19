@@ -30,10 +30,10 @@ class api_v4_AfformTest extends api_v4_AfformTestCase {
 
   public function getBasicDirectives() {
     return [
-      ['mockPage', ['title' => '', 'description' => '', 'server_route' => 'civicrm/mock-page']],
-      ['mockBareFile', ['title' => '', 'description' => '']],
-      ['mockFoo', ['title' => '', 'description' => '']],
-      ['mock-weird-name', ['title' => 'Weird Name', 'description' => '']],
+      ['mockPage', ['title' => '', 'description' => '', 'server_route' => 'civicrm/mock-page', 'permission' => 'access Foobar']],
+      ['mockBareFile', ['title' => '', 'description' => '', 'permission' => 'access CiviCRM']],
+      ['mockFoo', ['title' => '', 'description' => '', 'permission' => 'access CiviCRM']],
+      ['mock-weird-name', ['title' => 'Weird Name', 'description' => '', 'permission' => 'access CiviCRM']],
     ];
   }
 
@@ -58,6 +58,7 @@ class api_v4_AfformTest extends api_v4_AfformTestCase {
     $this->assertEquals($get($originalMetadata, 'title'), $get($result[0], 'title'), $message);
     $this->assertEquals($get($originalMetadata, 'description'), $get($result[0], 'description'), $message);
     $this->assertEquals($get($originalMetadata, 'server_route'), $get($result[0], 'server_route'), $message);
+    $this->assertEquals($get($originalMetadata, 'permission'), $get($result[0], 'permission'), $message);
     $this->assertTrue(is_array($result[0]['layout']), $message);
     $this->assertEquals(TRUE, $get($result[0], 'has_packaged'), $message);
     $this->assertEquals(FALSE, $get($result[0], 'has_local'), $message);
@@ -66,6 +67,7 @@ class api_v4_AfformTest extends api_v4_AfformTestCase {
     $result = Civi\Api4\Afform::update()
       ->addWhere('name', '=', $formName)
       ->addValue('description', 'The temporary description')
+      ->addValue('permission', 'access foo')
       ->execute();
     $this->assertEquals($formName, $result[0]['name'], $message);
     $this->assertEquals('The temporary description', $result[0]['description'], $message);
@@ -76,6 +78,7 @@ class api_v4_AfformTest extends api_v4_AfformTestCase {
     $this->assertEquals($get($originalMetadata, 'title'), $get($result[0], 'title'), $message);
     $this->assertEquals('The temporary description', $get($result[0], 'description'), $message);
     $this->assertEquals($get($originalMetadata, 'server_route'), $get($result[0], 'server_route'), $message);
+    $this->assertEquals('access foo', $get($result[0], 'permission'), $message);
     $this->assertTrue(is_array($result[0]['layout']), $message);
     $this->assertEquals(TRUE, $get($result[0], 'has_packaged'), $message);
     $this->assertEquals(TRUE, $get($result[0], 'has_local'), $message);
@@ -87,6 +90,7 @@ class api_v4_AfformTest extends api_v4_AfformTestCase {
     $this->assertEquals($get($originalMetadata, 'title'), $get($result[0], 'title'), $message);
     $this->assertEquals($get($originalMetadata, 'description'), $get($result[0], 'description'), $message);
     $this->assertEquals($get($originalMetadata, 'server_route'), $get($result[0], 'server_route'), $message);
+    $this->assertEquals($get($originalMetadata, 'permission'), $get($result[0], 'permission'), $message);
     $this->assertTrue(is_array($result[0]['layout']), $message);
     $this->assertEquals(TRUE, $get($result[0], 'has_packaged'), $message);
     $this->assertEquals(FALSE, $get($result[0], 'has_local'), $message);
@@ -201,9 +205,9 @@ class api_v4_AfformTest extends api_v4_AfformTestCase {
     // The default mockPage has 1 explicit requirement + 2 automatic requirements.
     Civi\Api4\Afform::revert()->addWhere('name', '=', $formName)->execute();
     $angModule = Civi::service('angular')->getModule($formName);
-    $this->assertEquals(['afCore', 'extraMock', 'mockBareFile', 'mockFoo'], $angModule['requires']);
+    $this->assertEquals(['afCore', 'mockBespoke', 'mockBareFile', 'mockFoo'], $angModule['requires']);
     $storedRequires = Civi\Api4\Afform::get()->addWhere('name', '=', $formName)->addSelect('requires')->execute();
-    $this->assertEquals(['extraMock'], $storedRequires[0]['requires']);
+    $this->assertEquals(['mockBespoke'], $storedRequires[0]['requires']);
 
     // Knock down to 1 explicit + 1 automatic.
     Civi\Api4\Afform::update()
@@ -212,9 +216,9 @@ class api_v4_AfformTest extends api_v4_AfformTestCase {
       ->setValues(['layout' => '<div>The bare file says "<span mock-bare-file/>"</div>'])
       ->execute();
     $angModule = Civi::service('angular')->getModule($formName);
-    $this->assertEquals(['afCore', 'extraMock', 'mockBareFile'], $angModule['requires']);
+    $this->assertEquals(['afCore', 'mockBespoke', 'mockBareFile'], $angModule['requires']);
     $storedRequires = Civi\Api4\Afform::get()->addWhere('name', '=', $formName)->addSelect('requires')->execute();
-    $this->assertEquals(['extraMock'], $storedRequires[0]['requires']);
+    $this->assertEquals(['mockBespoke'], $storedRequires[0]['requires']);
 
     // Remove the last explict and implicit requirements.
     Civi\Api4\Afform::update()
@@ -232,7 +236,7 @@ class api_v4_AfformTest extends api_v4_AfformTestCase {
 
     Civi\Api4\Afform::revert()->addWhere('name', '=', $formName)->execute();
     $angModule = Civi::service('angular')->getModule($formName);
-    $this->assertEquals(['afCore', 'extraMock', 'mockBareFile', 'mockFoo'], $angModule['requires']);
+    $this->assertEquals(['afCore', 'mockBespoke', 'mockBareFile', 'mockFoo'], $angModule['requires']);
   }
 
 }
